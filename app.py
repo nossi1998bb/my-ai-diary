@@ -221,7 +221,7 @@ speech_html = """
 """
 components.html(speech_html, height=125)
 
-# --- 8. 下の枠：貼り付けボタン付きメッセージ入力フォーム ---
+# --- 8. 下の枠：貼り付けボタン付きメッセージ入力フォーム（要素ターゲット不具合を修正） ---
 with st.form("chat_form", clear_on_submit=True):
     col_input, col_paste = st.columns([4, 1])
     
@@ -234,7 +234,7 @@ with st.form("chat_form", clear_on_submit=True):
         )
     
     with col_paste:
-        # クリップボードから貼り付けるヘルパーコンポーネント
+        # クリップボードから正確に最後のtext_inputへ貼り付けるスクリプト
         paste_html = """
         <button onclick="pasteToInput()" type="button" style="background-color: #6B7280; color: white; border: none; padding: 9px 12px; border-radius: 8px; font-size: 13px; font-weight: bold; cursor: pointer; width: 100%;">
           📋 貼付
@@ -244,15 +244,17 @@ with st.form("chat_form", clear_on_submit=True):
               try {
                   const text = await navigator.clipboard.readText();
                   if (text) {
+                      // 対象を特定：親ウィンドウのテキスト入力欄（speech-boxを除くinput要素）
                       const inputs = window.parent.document.querySelectorAll('input[type="text"]');
                       if (inputs.length > 0) {
                           const target = inputs[inputs.length - 1];
                           target.value = text;
                           target.dispatchEvent(new Event('input', { bubbles: true }));
+                          target.focus();
                       }
                   }
               } catch (e) {
-                  alert("入力枠を長押しして「貼り付け」を選択してください");
+                  alert("テキスト枠を長押しして「貼り付け」を選択してください");
               }
           }
         </script>
