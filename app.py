@@ -24,26 +24,6 @@ st.set_page_config(
     layout="centered"
 )
 
-# --- CSS設定: スマホ用カレンダー ---
-st.markdown("""
-<style>
-.calendar-grid {
-    display: grid;
-    grid-template-columns: repeat(7, 1fr);
-    gap: 4px;
-    text-align: center;
-    margin-bottom: 10px;
-}
-.calendar-header {
-    font-weight: bold;
-    background-color: #f0f2f6;
-    padding: 6px 0;
-    border-radius: 4px;
-    font-size: 12px;
-}
-</style>
-""", unsafe_allow_html=True)
-
 # --- 2. データ保存・読み込み関数 ---
 def load_data():
     if os.path.exists(DATA_FILE):
@@ -123,7 +103,7 @@ for msg in st.session_state.messages:
     else:
         st.chat_message("assistant").write(msg["content"])
 
-# --- 7. 上の枠：音声入力 & 「コピー」ボタン ---
+# --- 7. 音声入力エリア（トグル録音 & コピー機能） ---
 st.caption("🎙️ **音声入力エリア (タップで録音 ➔ 停止 ➔ コピー)**")
 speech_html = """
 <div style="background-color: #ffffff; border: 1.5px solid #d1d5db; border-radius: 12px; padding: 10px 14px; margin-bottom: 8px; font-family: sans-serif;">
@@ -134,8 +114,8 @@ speech_html = """
       </button>
       <span id="mic-status" style="font-size: 12px; color: #6b7280;"></span>
     </div>
-    <button id="copy-btn" onclick="copyText()" style="background-color: #4A5568; color: white; border: none; padding: 6px 14px; border-radius: 16px; font-size: 12px; font-weight: bold; cursor: pointer;">
-      📋 テキストをコピー
+    <button id="copy-btn" onclick="copyText()" style="background-color: #FF4B4B; color: white; border: none; padding: 6px 14px; border-radius: 16px; font-size: 12px; font-weight: bold; cursor: pointer;">
+      📋 コピーする
     </button>
   </div>
   <textarea id="speech-box" placeholder="マイクをタップして話すと、ここにリアルタイムで文章が入ります..." style="width: 100%; height: 50px; border: none; outline: none; resize: none; font-size: 14px; color: #1f2937; background: transparent; line-height: 1.4;"></textarea>
@@ -214,58 +194,20 @@ speech_html = """
 
   function copyText() {
       speechBox.select();
-      document.execCommand('copy');
-      micStatus.innerText = "コピー完了！下の貼り付けボタンを押してね";
+      speechBox.setSelectionRange(0, 99999);
+      navigator.clipboard.writeText(speechBox.value);
+      micStatus.innerText = "コピー完了！下の枠を長押しして貼り付けてね";
   }
 </script>
 """
 components.html(speech_html, height=125)
 
-# --- 8. 下の枠：貼り付けボタン付きメッセージ入力フォーム（要素ターゲット不具合を修正） ---
-with st.form("chat_form", clear_on_submit=True):
-    col_input, col_paste = st.columns([4, 1])
-    
-    with col_input:
-        user_input_text = st.text_input(
-            "メッセージ", 
-            placeholder="ここにメッセージを入力、またはコピーした文章を貼り付け...",
-            label_visibility="collapsed",
-            key="input_field"
-        )
-    
-    with col_paste:
-        # クリップボードから正確に最後のtext_inputへ貼り付けるスクリプト
-        paste_html = """
-        <button onclick="pasteToInput()" type="button" style="background-color: #6B7280; color: white; border: none; padding: 9px 12px; border-radius: 8px; font-size: 13px; font-weight: bold; cursor: pointer; width: 100%;">
-          📋 貼付
-        </button>
-        <script>
-          async function pasteToInput() {
-              try {
-                  const text = await navigator.clipboard.readText();
-                  if (text) {
-                      // 対象を特定：親ウィンドウのテキスト入力欄（speech-boxを除くinput要素）
-                      const inputs = window.parent.document.querySelectorAll('input[type="text"]');
-                      if (inputs.length > 0) {
-                          const target = inputs[inputs.length - 1];
-                          target.value = text;
-                          target.dispatchEvent(new Event('input', { bubbles: true }));
-                          target.focus();
-                      }
-                  }
-              } catch (e) {
-                  alert("テキスト枠を長押しして「貼り付け」を選択してください");
-              }
-          }
-        </script>
-        """
-        components.html(paste_html, height=45)
+# --- 8. スマホ最適化チャット入力欄 ---
+user_input = st.chat_input("メッセージを入力、または長押しして貼り付け...")
 
-    submitted = st.form_submit_button("メッセージを送信 🚀", type="primary", use_container_width=True)
-
-if submitted and user_input_text.strip():
-    user_input = user_input_text.strip()
+if user_input:
     st.session_state.messages.append({"role": "user", "content": user_input})
+    st.chat_message("user").write(user_input)
 
     with st.spinner("思考中..."):
         chat_history_prompt = f"""
@@ -292,7 +234,7 @@ if submitted and user_input_text.strip():
     st.rerun()
 
 st.markdown("---")
-if st.button("✨ 会話を締めくくって今日の日記としてまとめる", type="primary"):
+if st.button("✨ 会話を締めくくって今日の日記としてまとめる", type="primary", use_container_width=True):
     if len(st.session_state.messages) <= 1:
         st.warning("まずAIと少し会話を交わしてからボタンを押してください！")
     else:
@@ -346,39 +288,90 @@ if st.button("✨ 会話を締めくくって今日の日記としてまとめ�
 
 st.divider()
 
-# --- 9. 月間カレンダー表示機能 ---
+# --- 9. スマホ対応カレンダー表示（HTML/CSSグリッド形式） ---
 st.subheader("📅 月間日記カレンダー & 履歴")
 
 logs_by_date = {log["date"]: log for log in db.get("logs", [])}
 today = datetime.now()
 st.write(f"### {today.year}年 {today.month}月")
 
-days = ["月", "火", "水", "木", "金", "土", "日"]
-header_html = '<div class="calendar-grid">' + ''.join([f'<div class="calendar-header">{d}</div>' for d in days]) + '</div>'
-st.markdown(header_html, unsafe_allow_html=True)
-
+# カレンダーの生成
 cal = calendar.monthcalendar(today.year, today.month)
+days = ["月", "火", "水", "木", "金", "土", "日"]
 
+# カレンダー全体のHTML構築（スマホの画面幅でも絶対に横7列を維持）
+calendar_html = """
+<style>
+.cal-container {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 4px;
+    font-family: sans-serif;
+    margin-bottom: 12px;
+}
+.cal-head {
+    background-color: #f0f2f6;
+    padding: 6px 0;
+    text-align: center;
+    font-weight: bold;
+    font-size: 12px;
+    border-radius: 4px;
+    color: #4b5563;
+}
+.cal-cell {
+    background-color: #ffffff;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    padding: 8px 2px;
+    text-align: center;
+    font-size: 13px;
+    min-height: 42px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+.cal-cell.recorded {
+    background-color: #fef2f2;
+    border-color: #fca5a5;
+    font-weight: bold;
+}
+</style>
+<div class="cal-container">
+"""
+
+# 曜日ヘッダー
+for d in days:
+    calendar_html += f'<div class="cal-head">{d}</div>'
+
+# 日付セル
 for week in cal:
-    cols = st.columns(7)
-    for i, day in enumerate(week):
+    for day in week:
         if day == 0:
-            cols[i].write(" ")
+            calendar_html += '<div class="cal-cell" style="border:none; background:transparent;"></div>'
         else:
             date_str = f"{today.year}-{today.month:02d}-{day:02d}"
-            label = f"{day}🔥" if date_str in logs_by_date else f"{day}"
-            
-            if cols[i].button(label, key=f"cal_btn_{date_str}", use_container_width=True):
-                if date_str in logs_by_date:
-                    st.session_state.selected_log = logs_by_date[date_str]
-                else:
-                    st.session_state.selected_log = None
+            if date_str in logs_by_date:
+                calendar_html += f'<div class="cal-cell recorded">{day}<br><span style="font-size:11px;">🔥</span></div>'
+            else:
+                calendar_html += f'<div class="cal-cell">{day}</div>'
 
-if "selected_log" in st.session_state and st.session_state.selected_log:
-    s_log = st.session_state.selected_log
-    st.markdown("---")
-    st.subheader(f"📖 {s_log['date']} の日記")
-    st.write("**【日記本文】**")
-    st.write(s_log["entry"])
-    st.write("**【AIパートナーのコメント】**")
-    st.info(s_log["ai_comment"])
+calendar_html += "</div>"
+
+# スマホ対応HTMLカレンダーの表示
+components.html(calendar_html, height=260)
+
+# 過去の日記をドロップダウンで選択・振り返り
+if logs_by_date:
+    selected_date = st.selectbox(
+        "🗓️ 振り返りたい過去の日記日付を選択:",
+        options=sorted(list(logs_by_date.keys()), reverse=True)
+    )
+    if selected_date:
+        s_log = logs_by_date[selected_date]
+        st.markdown("---")
+        st.subheader(f"📖 {s_log['date']} の日記")
+        st.write("**【日記本文】**")
+        st.write(s_log["entry"])
+        st.write("**【AIパートナーのコメント】**")
+        st.info(s_log["ai_comment"])
