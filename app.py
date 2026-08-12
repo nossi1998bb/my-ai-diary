@@ -123,31 +123,27 @@ for msg in st.session_state.messages:
     else:
         st.chat_message("assistant").write(msg["content"])
 
-# --- 7. 統合型（音声入力＋送信ボタン一体化）フォーム ---
-integrated_input_html = """
-<div style="background-color: #ffffff; border: 1.5px solid #d1d5db; border-radius: 16px; padding: 12px 14px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); font-family: sans-serif; margin-bottom: 10px;">
-  <textarea id="unified-input" placeholder="メッセージを入力、またはマイクをタップして吹き込んでください..." style="width: 100%; height: 70px; border: none; outline: none; resize: none; font-size: 15px; color: #1f2937; line-height: 1.4; background: transparent;"></textarea>
-  
-  <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 6px; border-top: 1px solid #f3f4f6; padding-top: 8px;">
-    <div style="display: flex; align-items: center; gap: 8px;">
-      <button id="mic-btn" style="background: #f3f4f6; border: none; border-radius: 50%; width: 38px; height: 38px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s;">
-        <span id="mic-icon" style="font-size: 18px;">🎙️</span>
-      </button>
-      <span id="mic-status" style="font-size: 12px; color: #6b7280;"></span>
-    </div>
-    
-    <button id="send-btn" style="background-color: #FF4B4B; color: white; border: none; padding: 8px 18px; border-radius: 20px; font-size: 14px; font-weight: bold; cursor: pointer; display: flex; align-items: center; gap: 4px; transition: background 0.2s;">
-      送信 ⬆️
+# --- 7. 音声認識（手動トグル＋ワンタップコピー機能付き） ---
+st.caption("🎙️ **音声入力マイク (タップで録音・もう一度タップで停止)**")
+speech_html = """
+<div style="background-color: #ffffff; border: 1px solid #e0e0e0; border-radius: 12px; padding: 10px 14px; margin-bottom: 8px;">
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+    <button id="mic-btn" style="background: #f0f2f6; border: none; border-radius: 50%; width: 36px; height: 36px; cursor: pointer; display: flex; align-items: center; justify-content: center;">
+      <span id="mic-icon" style="font-size: 16px;">🎙️</span>
+    </button>
+    <span id="mic-status" style="font-size: 12px; color: #666;"></span>
+    <button id="copy-btn" onclick="copyText()" style="background-color: #4A5568; color: white; border: none; padding: 5px 12px; border-radius: 16px; font-size: 12px; font-weight: bold; cursor: pointer;">
+      📋 テキストをコピー
     </button>
   </div>
+  <textarea id="speech-box" placeholder="マイクをタップして話すと、ここにリアルタイムで文章が入ります..." style="width: 100%; height: 55px; border: none; outline: none; resize: none; font-size: 14px; color: #333; background: transparent; line-height: 1.4;"></textarea>
 </div>
 
 <script>
   const micBtn = document.getElementById('mic-btn');
   const micIcon = document.getElementById('mic-icon');
-  const unifiedInput = document.getElementById('unified-input');
+  const speechBox = document.getElementById('speech-box');
   const micStatus = document.getElementById('mic-status');
-  const sendBtn = document.getElementById('send-btn');
 
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
   let recognition = null;
@@ -170,7 +166,7 @@ integrated_input_html = """
                   interimTranscript += transcript;
               }
           }
-          unifiedInput.value = finalTranscript + interimTranscript;
+          speechBox.value = finalTranscript + interimTranscript;
       };
 
       recognition.onerror = (e) => {
@@ -192,67 +188,46 @@ integrated_input_html = """
           }
       });
   } else {
-      micStatus.innerText = "音声認識非対応";
-      micBtn.style.opacity = "0.4";
+      micStatus.innerText = "音声非対応";
   }
 
   function startRecording() {
       isRecording = true;
-      finalTranscript = unifiedInput.value;
+      finalTranscript = speechBox.value;
       try {
           recognition.start();
           micBtn.style.backgroundColor = "#FF4B4B";
           micIcon.innerText = "⏹️";
-          micStatus.innerText = "● 録音中";
+          micStatus.innerText = "● 録音中（もう一度タップで停止）";
       } catch(e) {}
   }
 
   function stopRecording() {
       isRecording = false;
       try { recognition.stop(); } catch(e) {}
-      micBtn.style.backgroundColor = "#f3f4f6";
+      micBtn.style.backgroundColor = "#f0f2f6";
       micIcon.innerText = "🎙️";
-      micStatus.innerText = "";
+      micStatus.innerText = "録音完了";
   }
 
-  // 送信処理（親コンポーネントへ送出）
-  sendBtn.addEventListener('click', () => {
-      const text = unifiedInput.value.trim();
-      if (text) {
-          if (isRecording) stopRecording();
-          window.parent.postMessage({type: 'streamlit:setComponentValue', value: text}, '*');
-          unifiedInput.value = '';
-      }
-  });
-
-  // Enterキーでの送信（Shift+Enterで改行）
-  unifiedInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && !e.shiftKey) {
-          e.preventDefault();
-          sendBtn.click();
-      }
-  });
+  function copyText() {
+      speechBox.select();
+      document.execCommand('copy');
+      micStatus.innerText = "コピー完了！下の入力欄に貼って送信してください";
+  }
 </script>
 """
+components.html(speech_html, height=135)
 
-# 一体型入力コンポーネントからの値取得
-user_input = components.html(integrated_input_html, height=155)
+# 8. Streamlit標準チャット入力欄
+user_input = st.chat_input("ここに直接入力するか、上のコピーした音声文章を貼り付けて送信...")
 
-# URLパラメータまたはセッション状態経由での送信データ受信ハンドリング
-# Streamlitのセッションを使ってメッセージ送信処理を実行
-if "last_input" not in st.session_state:
-    st.session_state.last_input = ""
+if user_input:
+    st.session_state.messages.append({"role": "user", "content": user_input})
+    st.chat_message("user").write(user_input)
 
-# 一体型入力コンポーネントから受け取ったメッセージの処理
-if user_input and user_input != st.session_state.last_input:
-    st.session_state.last_input = user_input
-    user_text = str(user_input).strip()
-    
-    if user_text:
-        st.session_state.messages.append({"role": "user", "content": user_text})
-        
-        with st.spinner("思考中..."):
-            chat_history_prompt = f"""
+    with st.spinner("思考中..."):
+        chat_history_prompt = f"""
 あなたはユーザーである「能代 達希（のしろ たつき）」さんの専属AIパートナーであり、知性と熱量を兼ね備えた最高の相棒です。
 
 {user_profile}
@@ -263,17 +238,17 @@ if user_input and user_input != st.session_state.last_input:
 
 【これまでの会話ログ】
 """
-            for m in st.session_state.messages:
-                chat_history_prompt += f"{m['role']}: {m['content']}\n"
+        for m in st.session_state.messages:
+            chat_history_prompt += f"{m['role']}: {m['content']}\n"
 
-            res = client.models.generate_content(
-                model="gemini-3.5-flash",
-                contents=chat_history_prompt
-            )
-            ai_reply = res.text
+        res = client.models.generate_content(
+            model="gemini-3.5-flash",
+            contents=chat_history_prompt
+        )
+        ai_reply = res.text
 
-        st.session_state.messages.append({"role": "assistant", "content": ai_reply})
-        st.rerun()
+    st.session_state.messages.append({"role": "assistant", "content": ai_reply})
+    st.rerun()
 
 st.markdown("---")
 if st.button("✨ 会話を締めくくって今日の日記としてまとめる", type="primary"):
@@ -330,7 +305,7 @@ if st.button("✨ 会話を締めくくって今日の日記としてまとめ�
 
 st.divider()
 
-# --- 8. 月間カレンダー表示機能 ---
+# --- 9. 月間カレンダー表示機能 ---
 st.subheader("📅 月間日記カレンダー & 履歴")
 
 logs_by_date = {log["date"]: log for log in db.get("logs", [])}
