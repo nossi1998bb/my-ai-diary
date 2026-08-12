@@ -123,26 +123,22 @@ for msg in st.session_state.messages:
     else:
         st.chat_message("assistant").write(msg["content"])
 
-# --- 7. 音声認識＆ワンタップペースト送信機能付きフォーム ---
-st.caption("🎙️ **メッセージ入力 & 音声吹き込み**")
+# --- 7. 上の枠：音声入力 & 「コピー」ボタン ---
+st.caption("🎙️ **音声入力エリア (タップで録音 ➔ 停止 ➔ コピー)**")
 speech_html = """
-<div style="background-color: #ffffff; border: 1.5px solid #d1d5db; border-radius: 14px; padding: 12px; margin-bottom: 8px; font-family: sans-serif;">
-  <textarea id="speech-box" placeholder="文字を入力するか、マイクをタップして音声を吹き込んでください..." style="width: 100%; height: 60px; border: none; outline: none; resize: none; font-size: 14px; color: #1f2937; background: transparent; line-height: 1.4;"></textarea>
-
-  <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid #f3f4f6; padding-top: 8px; margin-top: 4px;">
+<div style="background-color: #ffffff; border: 1.5px solid #d1d5db; border-radius: 12px; padding: 10px 14px; margin-bottom: 8px; font-family: sans-serif;">
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
     <div style="display: flex; align-items: center; gap: 8px;">
       <button id="mic-btn" style="background: #f3f4f6; border: none; border-radius: 50%; width: 36px; height: 36px; cursor: pointer; display: flex; align-items: center; justify-content: center;">
         <span id="mic-icon" style="font-size: 16px;">🎙️</span>
       </button>
       <span id="mic-status" style="font-size: 12px; color: #6b7280;"></span>
     </div>
-
-    <div style="display: flex; gap: 6px;">
-      <button id="paste-btn" onclick="pasteFromClipboard()" style="background-color: #6B7280; color: white; border: none; padding: 6px 12px; border-radius: 16px; font-size: 12px; font-weight: bold; cursor: pointer;">
-        📋 クリップボードを貼付
-      </button>
-    </div>
+    <button id="copy-btn" onclick="copyText()" style="background-color: #4A5568; color: white; border: none; padding: 6px 14px; border-radius: 16px; font-size: 12px; font-weight: bold; cursor: pointer;">
+      📋 テキストをコピー
+    </button>
   </div>
+  <textarea id="speech-box" placeholder="マイクをタップして話すと、ここにリアルタイムで文章が入ります..." style="width: 100%; height: 50px; border: none; outline: none; resize: none; font-size: 14px; color: #1f2937; background: transparent; line-height: 1.4;"></textarea>
 </div>
 
 <script>
@@ -204,7 +200,7 @@ speech_html = """
           recognition.start();
           micBtn.style.backgroundColor = "#FF4B4B";
           micIcon.innerText = "⏹️";
-          micStatus.innerText = "● 録音中";
+          micStatus.innerText = "● 録音中（タップで停止）";
       } catch(e) {}
   }
 
@@ -216,27 +212,58 @@ speech_html = """
       micStatus.innerText = "録音完了";
   }
 
-  async function pasteFromClipboard() {
-      try {
-          const text = await navigator.clipboard.readText();
-          if (text) {
-              speechBox.value += (speechBox.value ? " " : "") + text;
-              micStatus.innerText = "貼り付けました！下の入力欄へコピーして送信できます";
-          }
-      } catch (err) {
-          micStatus.innerText = "長押しして「貼り付け」を選択してください";
-      }
+  function copyText() {
+      speechBox.select();
+      document.execCommand('copy');
+      micStatus.innerText = "コピー完了！下の貼り付けボタンを押してね";
   }
 </script>
 """
-components.html(speech_html, height=140)
+components.html(speech_html, height=125)
 
-# --- 8. Streamlit標準チャット入力欄 ---
-user_input = st.chat_input("ここにメッセージを入力・貼り付けてAIへ送信...")
+# --- 8. 下の枠：貼り付けボタン付きメッセージ入力フォーム ---
+with st.form("chat_form", clear_on_submit=True):
+    col_input, col_paste = st.columns([4, 1])
+    
+    with col_input:
+        user_input_text = st.text_input(
+            "メッセージ", 
+            placeholder="ここにメッセージを入力、またはコピーした文章を貼り付け...",
+            label_visibility="collapsed",
+            key="input_field"
+        )
+    
+    with col_paste:
+        # クリップボードから貼り付けるヘルパーコンポーネント
+        paste_html = """
+        <button onclick="pasteToInput()" type="button" style="background-color: #6B7280; color: white; border: none; padding: 9px 12px; border-radius: 8px; font-size: 13px; font-weight: bold; cursor: pointer; width: 100%;">
+          📋 貼付
+        </button>
+        <script>
+          async function pasteToInput() {
+              try {
+                  const text = await navigator.clipboard.readText();
+                  if (text) {
+                      const inputs = window.parent.document.querySelectorAll('input[type="text"]');
+                      if (inputs.length > 0) {
+                          const target = inputs[inputs.length - 1];
+                          target.value = text;
+                          target.dispatchEvent(new Event('input', { bubbles: true }));
+                      }
+                  }
+              } catch (e) {
+                  alert("入力枠を長押しして「貼り付け」を選択してください");
+              }
+          }
+        </script>
+        """
+        components.html(paste_html, height=45)
 
-if user_input:
+    submitted = st.form_submit_button("メッセージを送信 🚀", type="primary", use_container_width=True)
+
+if submitted and user_input_text.strip():
+    user_input = user_input_text.strip()
     st.session_state.messages.append({"role": "user", "content": user_input})
-    st.chat_message("user").write(user_input)
 
     with st.spinner("思考中..."):
         chat_history_prompt = f"""
