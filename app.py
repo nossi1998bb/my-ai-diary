@@ -123,20 +123,26 @@ for msg in st.session_state.messages:
     else:
         st.chat_message("assistant").write(msg["content"])
 
-# --- 7. 音声認識（手動トグル＋ワンタップコピー機能付き） ---
-st.caption("🎙️ **音声入力マイク (タップで録音・もう一度タップで停止)**")
+# --- 7. 音声認識＆ワンタップペースト送信機能付きフォーム ---
+st.caption("🎙️ **メッセージ入力 & 音声吹き込み**")
 speech_html = """
-<div style="background-color: #ffffff; border: 1px solid #e0e0e0; border-radius: 12px; padding: 10px 14px; margin-bottom: 8px;">
-  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-    <button id="mic-btn" style="background: #f0f2f6; border: none; border-radius: 50%; width: 36px; height: 36px; cursor: pointer; display: flex; align-items: center; justify-content: center;">
-      <span id="mic-icon" style="font-size: 16px;">🎙️</span>
-    </button>
-    <span id="mic-status" style="font-size: 12px; color: #666;"></span>
-    <button id="copy-btn" onclick="copyText()" style="background-color: #4A5568; color: white; border: none; padding: 5px 12px; border-radius: 16px; font-size: 12px; font-weight: bold; cursor: pointer;">
-      📋 テキストをコピー
-    </button>
+<div style="background-color: #ffffff; border: 1.5px solid #d1d5db; border-radius: 14px; padding: 12px; margin-bottom: 8px; font-family: sans-serif;">
+  <textarea id="speech-box" placeholder="文字を入力するか、マイクをタップして音声を吹き込んでください..." style="width: 100%; height: 60px; border: none; outline: none; resize: none; font-size: 14px; color: #1f2937; background: transparent; line-height: 1.4;"></textarea>
+
+  <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid #f3f4f6; padding-top: 8px; margin-top: 4px;">
+    <div style="display: flex; align-items: center; gap: 8px;">
+      <button id="mic-btn" style="background: #f3f4f6; border: none; border-radius: 50%; width: 36px; height: 36px; cursor: pointer; display: flex; align-items: center; justify-content: center;">
+        <span id="mic-icon" style="font-size: 16px;">🎙️</span>
+      </button>
+      <span id="mic-status" style="font-size: 12px; color: #6b7280;"></span>
+    </div>
+
+    <div style="display: flex; gap: 6px;">
+      <button id="paste-btn" onclick="pasteFromClipboard()" style="background-color: #6B7280; color: white; border: none; padding: 6px 12px; border-radius: 16px; font-size: 12px; font-weight: bold; cursor: pointer;">
+        📋 クリップボードを貼付
+      </button>
+    </div>
   </div>
-  <textarea id="speech-box" placeholder="マイクをタップして話すと、ここにリアルタイムで文章が入ります..." style="width: 100%; height: 55px; border: none; outline: none; resize: none; font-size: 14px; color: #333; background: transparent; line-height: 1.4;"></textarea>
 </div>
 
 <script>
@@ -198,29 +204,35 @@ speech_html = """
           recognition.start();
           micBtn.style.backgroundColor = "#FF4B4B";
           micIcon.innerText = "⏹️";
-          micStatus.innerText = "● 録音中（もう一度タップで停止）";
+          micStatus.innerText = "● 録音中";
       } catch(e) {}
   }
 
   function stopRecording() {
       isRecording = false;
       try { recognition.stop(); } catch(e) {}
-      micBtn.style.backgroundColor = "#f0f2f6";
+      micBtn.style.backgroundColor = "#f3f4f6";
       micIcon.innerText = "🎙️";
       micStatus.innerText = "録音完了";
   }
 
-  function copyText() {
-      speechBox.select();
-      document.execCommand('copy');
-      micStatus.innerText = "コピー完了！下の入力欄に貼って送信してください";
+  async function pasteFromClipboard() {
+      try {
+          const text = await navigator.clipboard.readText();
+          if (text) {
+              speechBox.value += (speechBox.value ? " " : "") + text;
+              micStatus.innerText = "貼り付けました！下の入力欄へコピーして送信できます";
+          }
+      } catch (err) {
+          micStatus.innerText = "長押しして「貼り付け」を選択してください";
+      }
   }
 </script>
 """
-components.html(speech_html, height=135)
+components.html(speech_html, height=140)
 
-# 8. Streamlit標準チャット入力欄
-user_input = st.chat_input("ここに直接入力するか、上のコピーした音声文章を貼り付けて送信...")
+# --- 8. Streamlit標準チャット入力欄 ---
+user_input = st.chat_input("ここにメッセージを入力・貼り付けてAIへ送信...")
 
 if user_input:
     st.session_state.messages.append({"role": "user", "content": user_input})
