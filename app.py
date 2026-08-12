@@ -7,14 +7,14 @@ import streamlit as st
 import streamlit.components.v1 as components
 from google import genai
 
-# --- 1. 設定と準備（安全にSecretsから読み込み） ---
+# --- 1. 設定と準備 ---
 DATA_FILE = "diary_data.json"
 
-# APIキーの取得（Secrets経由）
+# APIキーの取得
 api_key = st.secrets.get("GEMINI_API_KEY") or os.environ.get("GEMINI_API_KEY")
 client = genai.Client(api_key=api_key)
 
-# プロフィールの取得（Secrets経由）
+# プロフィールの取得
 user_profile = st.secrets.get("USER_PROFILE", "ユーザー情報未設定")
 
 # ページ基本設定
@@ -24,7 +24,7 @@ st.set_page_config(
     layout="centered"
 )
 
-# --- CSS設定: スマホでもカレンダーの7列崩れを防ぐ ---
+# --- CSS設定: スマホ用カレンダー & Gemini風入力ボックスデザイン ---
 st.markdown("""
 <style>
 .calendar-grid {
@@ -58,7 +58,7 @@ def save_data(data):
     with open(DATA_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
-# --- 3. 動的ファビコン設定（連続投稿数をアイコン化） ---
+# --- 3. 動的ファビコン設定 ---
 def set_dynamic_favicon(streak_count):
     svg_icon = f"""
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
@@ -114,47 +114,49 @@ if "messages" not in st.session_state:
 
 st.divider()
 
-# --- 6. 音声認識（Web Speech API） ---
-st.subheader("🎙️ 音声入力 (スマホマイク対応)")
-speech_html = """
-<div style="margin-bottom:10px;">
-  <button id="start-btn" style="background-color:#FF4B4B; color:white; border:none; padding:10px 16px; border-radius:8px; font-weight:bold; cursor:pointer;">
-    🎙️ タップして話す
-  </button>
-  <span id="status" style="margin-left:8px; font-size:13px; color:#666;"></span>
-  <div id="result-box" style="background:#f0f2f6; padding:10px; border-radius:6px; margin-top:8px; min-height:45px; color:#333; font-size:14px; word-break:break-all;">
-    タップして話すとここに音声が表示されます
+# --- 6. チャット履歴表示 ---
+st.subheader("💬 AI相棒と対話して日記を作成")
+
+for msg in st.session_state.messages:
+    if msg["role"] == "user":
+        st.chat_message("user").write(msg["content"])
+    else:
+        st.chat_message("assistant").write(msg["content"])
+
+# --- 7. Gemini風 一体型音声入力 & 送信フォーム ---
+input_container_html = """
+<div style="background-color: #ffffff; border: 1.5px solid #e0e0e0; border-radius: 16px; padding: 12px 14px; box-shadow: 0 2px 6px rgba(0,0,0,0.05); font-family: sans-serif;">
+  <textarea id="speech-input" placeholder="メッセージを入力、またはマイクをタップして音声を吹き込んでください..." style="width: 100%; height: 75px; border: none; outline: none; resize: none; font-size: 15px; color: #333; line-height: 1.4; background: transparent;"></textarea>
+  
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 8px; border-top: 1px solid #f0f0f0; padding-top: 8px;">
+    <button id="mic-btn" style="background: #f0f2f6; border: none; border-radius: 50%; width: 38px; height: 38px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s;">
+      <span id="mic-icon" style="font-size: 18px;">🎙️</span>
+    </button>
+    <div style="display: flex; align-items: center; gap: 10px;">
+      <span id="mic-status" style="font-size: 12px; color: #888;"></span>
+      <button id="copy-btn" onclick="copyText()" style="background-color: #4A5568; color: white; border: none; padding: 7px 14px; border-radius: 20px; font-size: 13px; font-weight: bold; cursor: pointer;">
+        📋 コピー
+      </button>
+    </div>
   </div>
 </div>
 
 <script>
-  const startBtn = document.getElementById('start-btn');
-  const resultBox = document.getElementById('result-box');
-  const status = document.getElementById('status');
+  const micBtn = document.getElementById('mic-btn');
+  const micIcon = document.getElementById('mic-icon');
+  const speechInput = document.getElementById('speech-input');
+  const micStatus = document.getElementById('mic-status');
 
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SpeechRecognition) {
-      resultBox.innerText = "お使いのブラウザは音声認識に未対応です（Chrome / Safari 推奨）";
-  } else {
-      const recognition = new SpeechRecognition();
+  let recognition = null;
+  let isRecording = false;
+  let finalTranscript = '';
+
+  if (SpeechRecognition) {
+      recognition = new SpeechRecognition();
       recognition.lang = 'ja-JP';
       recognition.interimResults = true;
-      recognition.continuous = false;
-
-      let finalTranscript = '';
-
-      startBtn.addEventListener('click', () => {
-          finalTranscript = '';
-          resultBox.innerText = '聴き取り中...';
-          status.innerText = "● 録音中";
-          startBtn.style.backgroundColor = "#28a745";
-          try {
-              recognition.start();
-          } catch(e) {
-              recognition.stop();
-              recognition.start();
-          }
-      });
+      recognition.continuous = true; // 無音でも自動停止させず、ボタン押下まで継続
 
       recognition.onresult = (event) => {
           let interimTranscript = '';
@@ -166,45 +168,69 @@ speech_html = """
                   interimTranscript += transcript;
               }
           }
-          const textToShow = finalTranscript || interimTranscript;
-          if (textToShow) {
-              resultBox.innerText = textToShow;
-          }
+          speechInput.value = finalTranscript + interimTranscript;
       };
 
       recognition.onerror = (e) => {
-          status.innerText = "エラー: " + (e.error || 'マイク許可を確認してください');
-          startBtn.style.backgroundColor = "#FF4B4B";
+          micStatus.innerText = "エラー: " + (e.error || 'マイク権限を確認');
+          stopRecording();
       };
 
       recognition.onend = () => {
-          status.innerText = "完了！文字をコピーして下のチャットに貼り付けてね";
-          startBtn.style.backgroundColor = "#FF4B4B";
+          if (isRecording) {
+              // 意図せず切れた場合は自動再開（ボタン操作まで停止させない）
+              try { recognition.start(); } catch(err) {}
+          }
       };
+
+      micBtn.addEventListener('click', () => {
+          if (!isRecording) {
+              startRecording();
+          } else {
+              stopRecording();
+          }
+      });
+  } else {
+      micStatus.innerText = "ブラウザ非対応";
+      micBtn.style.opacity = "0.5";
+  }
+
+  function startRecording() {
+      isRecording = true;
+      finalTranscript = speechInput.value;
+      try {
+          recognition.start();
+          micBtn.style.backgroundColor = "#FF4B4B";
+          micIcon.innerText = "⏹️";
+          micStatus.innerText = "● 録音中（タップで停止）";
+      } catch(e) {}
+  }
+
+  function stopRecording() {
+      isRecording = false;
+      try { recognition.stop(); } catch(e) {}
+      micBtn.style.backgroundColor = "#f0f2f6";
+      micIcon.innerText = "🎙️";
+      micStatus.innerText = "録音完了";
+  }
+
+  function copyText() {
+      speechInput.select();
+      document.execCommand('copy');
+      micStatus.innerText = "コピーしました！下の入力欄に貼り付けて送信してください";
   }
 </script>
 """
-components.html(speech_html, height=140)
+components.html(input_container_html, height=170)
 
-st.divider()
-
-# --- 7. 対話チャット機能 ---
-st.subheader("💬 AI相棒と対話して日記を作成")
-
-for msg in st.session_state.messages:
-    if msg["role"] == "user":
-        st.chat_message("user").write(msg["content"])
-    else:
-        st.chat_message("assistant").write(msg["content"])
-
-user_input = st.chat_input("今日の出来事や感じたことを自由に話しかけてね...")
+# Streamlit標準のチャット入力欄
+user_input = st.chat_input("上のボックスで音声入力した文章をここに貼るか、直接入力してください...")
 
 if user_input:
     st.session_state.messages.append({"role": "user", "content": user_input})
     st.chat_message("user").write(user_input)
 
     with st.spinner("思考中..."):
-        # プロフィールはSecretsから動的に取得
         chat_history_prompt = f"""
 あなたはユーザーである「能代 達希（のしろ たつき）」さんの専属AIパートナーであり、知性と熱量を兼ね備えた最高の相棒です。
 
